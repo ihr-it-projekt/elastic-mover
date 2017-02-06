@@ -1,38 +1,40 @@
 <?php
 
-$input = "";
-$input_type = 0;
-$output = "";
-$output_type = 0;
-$verbose = 0;
-$chunk_size = 1000;
-$bulk_size = 1000;
+$input        = "";
+$input_type   = 0;
+$output       = "";
+$output_type  = 0;
+$verbose      = 0;
+$chunk_size   = 1000;
+$bulk_size    = 1000;
 $verbose_mode = 1;
-$data_type = 0;
+$data_type    = 0;
+$dump_pattern = false;
 
-if($argc == 1) {
+if ($argc == 1) {
     echo "ElasticMover 0.1.1\n";
     echo "Usage: php elasticmover.php -i=<input path> -o=<output path> [options...]\n";
     echo "Options: \n";
     echo " -i=<elasticsearch index url or file path>\texample: -i=http://localhost:9200/index or /path/to/file\n";
     echo " -o=<elasticsearch index url or file path>\texample: -o=http://localhost:9200/index or /path/to/file\n";
+    echo " -dp index in url will used as regex patern. All indexes who match string will exported in one file. Parameter is onley used in export process.";
 } else {
-    foreach ( $argv as $key => $value ) {
+    foreach ($argv as $key => $value) {
         $arg = explode("=", $value);
         if (count($arg) == 2) {
             switch ($arg[0]) {
                 case "-i":
                     $i_url_parse = parse_url($arg[1]);
-                    if($i_url_parse) {
-                        if($i_url_parse['path'] != "") {
-                            if ($i_url_parse['scheme'] == "" && $i_url_parse['host'] == "") {
-                                $input = $arg[1];
+                    if ($i_url_parse) {
+                        if ($i_url_parse['path'] != "") {
+                            if (!isset($i_url_parse['scheme'], $i_url_parse['host']) || ($i_url_parse['scheme'] == "" && $i_url_parse['host'] == "")) {
+                                $input      = $arg[1];
                                 $input_type = 1; // file input type
                             } else {
                                 $path_explode = explode("/", $i_url_parse['path']);
                                 if (count($path_explode) == 2) {
                                     if ($path_explode[0] == "" && $path_explode[1] != "") {
-                                        $input = $arg[1];
+                                        $input      = $arg[1];
                                         $input_type = 0; // url input type
                                     } else {
                                         echo "Malformed input url, please use this format: {protocol}://{host}:{port}/{index}\n";
@@ -46,16 +48,16 @@ if($argc == 1) {
                     break;
                 case "-o":
                     $o_url_parse = parse_url($arg[1]);
-                    if($o_url_parse) {
-                        if($o_url_parse['path'] != "") {
-                            if ($o_url_parse['scheme'] == "" && $o_url_parse['host'] == "") {
-                                $output = $arg[1];
+                    if ($o_url_parse) {
+                        if ($o_url_parse['path'] !== "") {
+                            if (!isset($o_url_parse['scheme'], $o_url_parse['host']) || ($o_url_parse['scheme'] == "" && $o_url_parse['host'] == "")) {
+                                $output      = $arg[1];
                                 $output_type = 1; // file input type
                             } else {
                                 $path_explode = explode("/", $o_url_parse['path']);
                                 if (count($path_explode) == 2) {
                                     if ($path_explode[0] == "" && $path_explode[1] != "") {
-                                        $output = $arg[1];
+                                        $output      = $arg[1];
                                         $output_type = 0; // url input type
                                     } else {
                                         echo "Malformed output url, please use this format: {protocol}://{host}:{port}/{index}\n";
@@ -68,12 +70,12 @@ if($argc == 1) {
                     }
                     break;
                 case "-c":
-                    if(is_numeric($arg[1]) && $arg[1] > 0) {
+                    if (is_numeric($arg[1]) && $arg[1] > 0) {
                         $chunk_size = $arg[1];
                     }
                     break;
                 case "-b":
-                    if(is_numeric($arg[1]) && $arg[1] > 0) {
+                    if (is_numeric($arg[1]) && $arg[1] > 0) {
                         $bulk_size = $arg[1];
                     }
                     break;
@@ -92,22 +94,27 @@ if($argc == 1) {
                 case "-m":
                     $data_type = 1;
                     break;
+                case "-dp":
+                    $dump_pattern = true;
             }
         }
     }
 
-    if($input != "" && $output != "") {
-        if($input_type == 0 && $output_type == 1) {
+    if ($input != "" && $output != "") {
+        if ($input_type == 0 && $output_type == 1) {
             echo "$input ---";
             echo $data_type ? 'map' : 'data';
             echo "---> $output\n";
-            es2file($input, $output, $data_type, $verbose_mode, $chunk_size);
-        } elseif($input_type == 1 && $output_type == 0) {
+            $inputs = preImExport($input, $dump_pattern);
+            foreach ($inputs as $input) {
+                es2file($input, $output, $data_type, $verbose_mode, $chunk_size);
+            }
+        } elseif ($input_type == 1 && $output_type == 0) {
             echo "$input ---";
             echo $data_type ? 'map' : 'data';
             echo "---> $output\n";
             file2es($input, $output, $data_type, $verbose_mode, $bulk_size);
-        } elseif($input_type == 0 && $output_type == 0) {
+        } elseif ($input_type == 0 && $output_type == 0) {
             echo "File to File transfer is not supported\n";
         }
     } else {
@@ -116,30 +123,63 @@ if($argc == 1) {
 }
 
 /**
- * @param $es_url
- * @param $output
- * @param $data_type
+ * @param string $es_url
+ * @param bool   $index_pattern
+ *
+ * @return array
+ */
+function preImExport($es_url, $index_pattern)
+{
+
+    $es_urls = [];
+
+    if ($index_pattern === true) {
+        $pos     = strrpos($es_url, "/", -1);
+        $pattern = substr($es_url, $pos + 1);
+
+        $serverUrl = str_replace($pattern, '', $es_url);
+
+        $es      = new ElasticSearch($serverUrl);
+        $indexes = $es->getIndexes();
+
+        foreach ($indexes as $index => $value) {
+            if (preg_match(sprintf('/%s/', $pattern), $index)) {
+                $es_urls[] = sprintf('%s%s', $serverUrl, $index);
+            }
+        }
+    } else {
+        $es_urls[] = $es_url;
+    }
+
+    return $es_urls;
+}
+
+/**
+ * @param     $es_url
+ * @param     $output
+ * @param     $data_type
  * @param int $verbose_mode
  * @param int $chunk_size
+ *
  * @internal param $index
  */
 function es2file($es_url, $output, $data_type, $verbose_mode = 1, $chunk_size = 1000)
 {
-    if($data_type == 1) {
+    if ($data_type === 1) {
         //Index map
-        $es = new ElasticSearch($es_url);
-        $map = $es->getMapping();
+        $es            = new ElasticSearch($es_url);
+        $map           = $es->getMapping();
         $es_url_parsed = parse_url($es_url);
-        $index = str_replace("/","", $es_url_parsed['path']);
+        $index         = str_replace("/", "", $es_url_parsed['path']);
         writeDataToFile(json_encode($map->{$index}), $output);
         echo "$index map saved\n";
     } else {
         //Index data
-        $count_docs = 0;
+        $count_docs    = 0;
         $chuck_counter = 0;
-        $dump = "";
+        $dump          = "";
 
-        $es = new ElasticSearch($es_url);
+        $es    = new ElasticSearch($es_url);
         $query = '{
               "query": {
                 "bool": {
@@ -151,59 +191,69 @@ function es2file($es_url, $output, $data_type, $verbose_mode = 1, $chunk_size = 
             }';
 
         $scroll_ret = $es->createScrollID($query);
-        $scroll_id = $scroll_ret->_scroll_id;
+        $scroll_id  = $scroll_ret->_scroll_id;
         $total_docs = $scroll_ret->hits->total;
 
-        if ($verbose_mode > 1)
+        if ($verbose_mode > 1) {
             echo "[" . date('c') . "] Scroll ID created: " . $scroll_id . "\n";
+        }
 
         while (true) {
             $docs_ret = $es->getScrollData($scroll_id);
-            if($docs_ret != null) {
+            if ($docs_ret != null) {
                 if (isset($docs_ret->hits->hits)) {
                     $docs = $docs_ret->hits->hits;
                 } else {
                     echo "[" . date('c') . "] Get Scroll docs error: \n";
                     print_r($docs_ret);
                     echo "\n";
+
                     return null;
                 }
                 $count_docs += count($docs);
 
-                if ($verbose_mode > 1)
+                if ($verbose_mode > 1) {
                     echo "[" . date('c') . "] Scroll docs: " . count($docs) . ", ($count_docs/$total_docs)\n";
+                }
 
                 if (count($docs) == 0) {
-                    if ($verbose_mode > 1)
+                    if ($verbose_mode > 1) {
                         echo "[" . date('c') . "] Dump Result: $count_docs docs\n";
+                    }
+
                     return 0;
                 }
 
                 foreach ($docs as $r => $row) {
-                    if ($verbose_mode == 3)
+                    if ($verbose_mode == 3) {
                         echo "[" . date('c') . "] Read doc: $row->_id\n";
-                    if ($verbose_mode == 1)
+                    }
+                    if ($verbose_mode == 1) {
                         show_status($count_docs, $total_docs, $size = 40);
+                    }
                     $bk_object = createBackupDocObj($row, "");
-                    $dump .= $bk_object;
+                    $dump      .= $bk_object;
                     $chuck_counter++;
                 }
 
                 if ($chuck_counter > $chunk_size) {
                     appendDataToFile($dump, $output);
-                    if ($verbose_mode > 1)
+                    if ($verbose_mode > 1) {
                         echo "[" . date('c') . "] Save docs to dump file: saved $chuck_counter docs\n";
+                    }
                     $chuck_counter = 0;
-                    $dump = "";
+                    $dump          = "";
                 }
             } else {
                 if ($dump != "") {
                     appendDataToFile($dump, $output);
-                    if ($verbose_mode > 1)
+                    if ($verbose_mode > 1) {
                         echo "[" . date('c') . "] Save docs to dump file: saved $chuck_counter docs\n";
+                    }
                     $chuck_counter = 0;
-                    $dump = "";
+                    $dump          = "";
                 }
+
                 return;
             }
         }
@@ -211,11 +261,12 @@ function es2file($es_url, $output, $data_type, $verbose_mode = 1, $chunk_size = 
 }
 
 /**
- * @param $input
- * @param $es_url
- * @param $data_type
- * @param int $verbose_mode
- * @param int $bulk_size
+ * @param string $input
+ * @param string $es_url
+ * @param int    $data_type
+ * @param int    $verbose_mode
+ * @param int    $bulk_size
+ *
  * @internal param int $chunk_size
  * @internal param $output
  * @internal param $index
@@ -223,70 +274,70 @@ function es2file($es_url, $output, $data_type, $verbose_mode = 1, $chunk_size = 
  */
 function file2es($input, $es_url, $data_type, $verbose_mode = 1, $bulk_size = 1000)
 {
-    if($data_type == 1) {
+    if ($data_type == 1) {
         // Index Map
-    echo "[" . date('c') . "] Reading map file\n";
-        $handle = fopen($input, "rb");
+        echo "[" . date('c') . "] Reading map file\n";
+        $handle   = fopen($input, "rb");
         $contents = fread($handle, filesize($input));
         fclose($handle);
 
         $maps = json_decode($contents);
-        $es = new ElasticSearch($es_url);
-        foreach($maps as $key=>$value){
-            $map = array();
+        $es   = new ElasticSearch($es_url);
+        foreach ($maps as $key => $value) {
+            $map       = [];
             $map[$key] = $value;
-            $map_res = $es->setMapping($key, json_encode($map));
+            $map_res   = $es->setMapping($key, json_encode($map));
             echo "$key type saved: " . json_encode($map_res) . "\n";
         }
     } else {
         // Index Data
         $total_line_count = 0;
-        $line_count = 0;
-        $bulk_count = 0;
-    $obj_count = 0;
+        $line_count       = 0;
+        $bulk_count       = 0;
+        $obj_count        = 0;
 
-    echo "[" . date('c') . "] Reading data file\n";
+        echo "[" . date('c') . "] Reading data file\n";
         $handle = fopen($input, "r");
-        while(!feof($handle)){
+        while (!feof($handle)) {
             fgets($handle);
             $total_line_count++;
         }
         fclose($handle);
 
-    echo "[" . date('c') . "] Starting data import\n";
-    $obj_buffer = "";
-        $data = "";
-        $handle = fopen($input, "r");
+        echo "[" . date('c') . "] Starting data import\n";
+        $obj_buffer = "";
+        $data       = "";
+        $handle     = fopen($input, "r");
         while (!feof($handle)) {
             $line = fgets($handle);
             if (strpos($line, '_index') !== false) {
                 $obj_buffer = $line;
             } else {
                 $obj_buffer .= $line;
-                $data .= $obj_buffer;
-        $obj_count++;
-        $obj_buffer = "";
+                $data       .= $obj_buffer;
+                $obj_count++;
+                $obj_buffer = "";
             }
 
             $bulk_count++;
             $line_count++;
 
-        if(bulkData($es_url, $data, $bulk_count, $bulk_size)) {
-        $bulk_count = 0;
-        $data = "";
-        show_status($line_count, $total_line_count);
-        }
+            if (bulkData($es_url, $data, $bulk_count, $bulk_size)) {
+                $bulk_count = 0;
+                $data       = "";
+                show_status($line_count, $total_line_count);
+            }
         }
 
-        if(bulkData($es_url, $data, $bulk_count, 0)) {
+        if (bulkData($es_url, $data, $bulk_count, 0)) {
             $bulk_count = 0;
-            $data = "";
-        show_status($line_count, $total_line_count);
+            $data       = "";
+            show_status($line_count, $total_line_count);
         }
 
         fclose($handle);
-    echo "\n";
-    echo "[" . date('c') . "] Imported $obj_count docs\n";
+        echo "\n";
+        echo "[" . date('c') . "] Imported $obj_count docs\n";
     }
 }
 
@@ -296,11 +347,11 @@ function file2es($input, $es_url, $data_type, $verbose_mode = 1, $bulk_size = 10
  */
 function es2es($index, $file)
 {
-
 }
 
 /**
  * @param $object
+ *
  * @return string
  */
 function createBackupDocObj($object)
@@ -308,6 +359,7 @@ function createBackupDocObj($object)
     $data = "";
     $data .= '{ "index" : { "_index" : "' . $object->_index . '", "_type" : "' . $object->_type . '", "_id" : "' . $object->_id . '" } }' . "\n";
     $data .= json_encode($object->_source) . "\n";
+
     return $data;
 }
 
@@ -320,14 +372,15 @@ function appendDataToFile($data, $file)
 
 function bulkData($es_url, $data, $count, $limit)
 {
-    if($count >= $limit)
-    {
-        $es = new ElasticSearch($es_url);
+    if ($count >= $limit) {
+        $es  = new ElasticSearch($es_url);
         $res = $es->bulk($data);
         sleep(2);
-    return true;
-     }
-     return false;
+
+        return true;
+    }
+
+    return false;
 }
 
 function writeDataToFile($data, $file)
@@ -345,107 +398,149 @@ class ElasticSearch
     /**
      * @param string $server
      */
-    function __construct($server = 'http://localhost:9200')
+    public function __construct($server = 'http://localhost:9200')
     {
         $this->server = $server;
     }
 
     /**
-     * @param $path
-     * @param array $http
-     * @param bool $include_index
-     * @return mixed|null
-     */
-    function call($path, $http = array(), $include_index = true)
-    {
-        try {
-            if(!$include_index) {
-                $url_server = parse_url($this->server);
-                $server = str_replace($url_server['path'], "", $this->server);
-            } else {
-                $server = $this->server;
-            }
-            $response = @file_get_contents($server . '/' . $path, NULL, stream_context_create(array('http' => $http)));
-            if($response === false) {
-                return null;
-            } else {
-                return json_decode($response);
-            }
-        } catch (Exception $e) {
-            echo "[" . date('c') . "] ElasticSearch Class Exception: " . $e->getMessage() . "\n";
-            return null;
-        }
-    }
-
-    /**
      * @param $query
+     *
      * @return mixed|null
      * @throws Exception
      */
-    function createScrollID($query)
+    public function createScrollID($query)
     {
-        return $this->call('_search?search_type=scan&scroll=1m&size=50', array('method' => 'GET', 'header'=>'Content-Type: application/json\r\n', 'content' => $query));
+        return $this->call(
+            '_search?search_type=scan&scroll=1m&size=50',
+            ['method' => 'GET', 'header' => 'Content-Type: application/json\r\n', 'content' => $query]
+        );
     }
 
     /**
      * @param $id
+     *
      * @return mixed|null
      * @throws Exception
      */
-    function getScrollData($id)
+    public function getScrollData($id)
     {
-        return $this->call('_search/scroll?scroll=1m', array('method' => 'GET', 'header'=>'Content-Type: application/json\r\n', 'content' => $id), false);
+        return $this->call(
+            '_search/scroll?scroll=1m',
+            ['method' => 'GET', 'header' => 'Content-Type: application/json\r\n', 'content' => $id],
+            false
+        );
     }
 
-    function clearAllScrollID()
+    public function clearAllScrollID()
     {
-        return $this->call('search/scroll/_all', array('method' => 'DELETE', 'header'=>'Content-Type: application/json\r\n'), false);
+        return $this->call(
+            'search/scroll/_all',
+            ['method' => 'DELETE', 'header' => 'Content-Type: application/json\r\n'],
+            false
+        );
     }
 
     /**
      * @return mixed|null
      */
-    function getMapping()
+    public function getMapping()
     {
-        return $this->call('_mapping', array('method' => 'GET', 'header'=>'Content-Type: application/json\r\n'));
+        return $this->call('_mapping', ['method' => 'GET', 'header' => 'Content-Type: application/json\r\n']);
     }
 
     /**
      * @param $type
      * @param $map
+     *
      * @return mixed|null
      */
-    function setMapping($type, $map)
+    public function setMapping($type, $map)
     {
-        return $this->call('/' . $type . '/_mapping', array('method' => 'PUT', 'header'=>'Content-Type: application/json\r\n', 'content' => $map));
+        return $this->call(
+            '/' . $type . '/_mapping',
+            ['method' => 'PUT', 'header' => 'Content-Type: application/json\r\n', 'content' => $map]
+        );
     }
 
     /**
      * @param $data
+     *
      * @return mixed|null
      */
-    function bulk($data){
-        return $this->call('_bulk', array('method' => 'POST', 'header'=>'Content-Type: application/json\r\n', 'content' => $data));
+    public function bulk($data)
+    {
+        return $this->call(
+            '_bulk',
+            ['method' => 'POST', 'header' => 'Content-Type: application/json\r\n', 'content' => $data]
+        );
     }
+
+    /**
+     * @return array|null
+     */
+    public function getIndexes()
+    {
+        return $this->call(
+            '_aliases',
+            ['method' => 'GET', 'header' => 'Content-Type: application/json\r\n'],
+            true,
+            true
+        );
+    }
+
+    /**
+     * @param       $path
+     * @param array $http
+     * @param bool  $include_index
+     *
+     * @return mixed|null
+     */
+    private function call($path, array $http = [], $include_index = true, $getAssArray = false)
+    {
+        try {
+            if (!$include_index) {
+                $url_server = parse_url($this->server);
+                $server     = str_replace($url_server['path'], "", $this->server);
+            } else {
+                $server = $this->server;
+            }
+            $response = @file_get_contents($server . '/' . $path, null, stream_context_create(['http' => $http]));
+            if ($response === false) {
+                return null;
+            } else {
+                return json_decode($response, $getAssArray);
+            }
+        } catch (Exception $e) {
+            echo "[" . date('c') . "] ElasticSearch Class Exception: " . $e->getMessage() . "\n";
+
+            return null;
+        }
+    }
+
 }
 
 /**
  * show a status bar in the console
  *
  *
- * @param $done
- * @param $total
+ * @param     $done
+ * @param     $total
  * @param int $size
  */
-function show_status($done, $total, $size=50)
+function show_status($done, $total, $size = 50)
 {
     static $start_time;
     // if we go over our bound, just ignore it
-    if ($done > $total) return;
-    if (empty($start_time)) $start_time = time();
-    $now = time();
-    $perc = (double)($done / $total);
-    $bar = floor($perc * $size);
+    if ($done > $total) {
+        return;
+    }
+    if (empty($start_time)) {
+        $start_time = time();
+    }
+    $now        = time();
+    $perc       = (double) ($done / $total);
+    $bar        = floor($perc * $size);
     $status_bar = "\r[";
     $status_bar .= str_repeat("=", $bar);
     if ($bar < $size) {
@@ -454,12 +549,12 @@ function show_status($done, $total, $size=50)
     } else {
         $status_bar .= "=";
     }
-    $disp = number_format($perc * 100, 0);
+    $disp       = number_format($perc * 100, 0);
     $status_bar .= "] $disp%  $done/$total";
-    $rate = ($now - $start_time) / $done;
-    $left = $total - $done;
-    $eta = round($rate * $left, 2);
-    $elapsed = $now - $start_time;
+    $rate       = ($now - $start_time) / $done;
+    $left       = $total - $done;
+    $eta        = round($rate * $left, 2);
+    $elapsed    = $now - $start_time;
     $status_bar .= " remaining: " . number_format($eta) . " sec.  elapsed: " . number_format($elapsed) . " sec.";
     echo "$status_bar  ";
     flush();
