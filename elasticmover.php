@@ -17,7 +17,7 @@ if ($argc == 1) {
     echo "Options: \n";
     echo " -i=<elasticsearch index url or file path>\texample: -i=http://localhost:9200/index or /path/to/file\n";
     echo " -o=<elasticsearch index url or file path>\texample: -o=http://localhost:9200/index or /path/to/file\n";
-    echo " -p index in url will used as regex pattern. All indexes who match string will exported in one file. Parameter is only used in export process.";
+    echo " -p index in url will used as regex pattern. All indexes who match string will exported in one file. Parameter is only used in export process." . PHP_EOL;
 } else {
     foreach ($argv as $key => $value) {
         $arg = explode("=", $value);
