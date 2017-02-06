@@ -105,9 +105,13 @@ if ($argc == 1) {
             echo "$input ---";
             echo $data_type ? 'map' : 'data';
             echo "---> $output\n";
-            $inputs = preImExport($input, $use_pattern);
-            foreach ($inputs as $input) {
-                es2file($input, $output, $data_type, $verbose_mode, $chunk_size);
+            try {
+                $inputs = preImExport($input, $use_pattern);
+                foreach ($inputs as $input) {
+                    es2file($input, $output, $data_type, $verbose_mode, $chunk_size);
+                }
+            } catch (\Exception $e) {
+                echo  $e->getMessage();
             }
         } elseif ($input_type == 1 && $output_type == 0) {
             echo "$input ---";
@@ -132,6 +136,8 @@ function preImExport($es_url, $use_pattern)
 {
     $es_urls = [];
 
+    $pattern = '';
+
     if ($use_pattern === true) {
         $pos     = strrpos($es_url, "/", -1);
         $pattern = substr($es_url, $pos + 1);
@@ -142,7 +148,8 @@ function preImExport($es_url, $use_pattern)
         $indexes = $es->getIndexes();
 
         if (empty($indexes)) {
-            throw new \Exception(sprintf('No index found for pattern "%s"', $pattern));
+            $message = sprintf('Can not load indexes from "%s"', $serverUrl);
+            throw new \Exception($message);
         }
 
         foreach ($indexes as $index => $value) {
@@ -152,6 +159,11 @@ function preImExport($es_url, $use_pattern)
         }
     } else {
         $es_urls[] = $es_url;
+    }
+
+    if (empty($es_urls)) {
+        $message = sprintf('Can not find an index that match pattern "%s"', $pattern);
+        throw new \Exception($message);
     }
 
     return $es_urls;
