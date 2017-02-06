@@ -141,6 +141,10 @@ function preImExport($es_url, $use_pattern)
         $es      = new ElasticSearch($serverUrl);
         $indexes = $es->getIndexes();
 
+        if (empty($indexes)) {
+            throw new \Exception(sprintf('No index found for pattern "%s"', $pattern));
+        }
+
         foreach ($indexes as $index => $value) {
             if (preg_match(sprintf('/%s/', $pattern), $index)) {
                 $es_urls[] = sprintf('%s%s', $serverUrl, $index);
