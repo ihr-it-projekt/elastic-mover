@@ -9,7 +9,7 @@ $chunk_size   = 1000;
 $bulk_size    = 1000;
 $verbose_mode = 1;
 $data_type    = 0;
-$dump_pattern = false;
+$use_pattern  = false;
 
 if ($argc == 1) {
     echo "ElasticMover 0.1.1\n";
@@ -17,7 +17,7 @@ if ($argc == 1) {
     echo "Options: \n";
     echo " -i=<elasticsearch index url or file path>\texample: -i=http://localhost:9200/index or /path/to/file\n";
     echo " -o=<elasticsearch index url or file path>\texample: -o=http://localhost:9200/index or /path/to/file\n";
-    echo " -db index in url will used as regex pattern. All indexes who match string will exported in one file. Parameter is only used in export process.";
+    echo " -p index in url will used as regex pattern. All indexes who match string will exported in one file. Parameter is only used in export process.";
 } else {
     foreach ($argv as $key => $value) {
         $arg = explode("=", $value);
@@ -94,8 +94,8 @@ if ($argc == 1) {
                 case "-m":
                     $data_type = 1;
                     break;
-                case "-dp":
-                    $dump_pattern = true;
+                case "-p":
+                    $use_pattern = true;
             }
         }
     }
@@ -105,7 +105,7 @@ if ($argc == 1) {
             echo "$input ---";
             echo $data_type ? 'map' : 'data';
             echo "---> $output\n";
-            $inputs = preImExport($input, $dump_pattern);
+            $inputs = preImExport($input, $use_pattern);
             foreach ($inputs as $input) {
                 es2file($input, $output, $data_type, $verbose_mode, $chunk_size);
             }
@@ -124,16 +124,15 @@ if ($argc == 1) {
 
 /**
  * @param string $es_url
- * @param bool   $index_pattern
+ * @param bool   $use_pattern
  *
  * @return array
  */
-function preImExport($es_url, $index_pattern)
+function preImExport($es_url, $use_pattern)
 {
-
     $es_urls = [];
 
-    if ($index_pattern === true) {
+    if ($use_pattern === true) {
         $pos     = strrpos($es_url, "/", -1);
         $pattern = substr($es_url, $pos + 1);
 

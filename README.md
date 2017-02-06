@@ -15,7 +15,7 @@ INPUT PATH and OUTPUT PATH can be:
 ### Options
 - `-d` export or import index data (default)
 - `-m` export or import index map
-- `-db` index in url will used as regex pattern. All indexes who match string will exported in one file. Parameter is only used in export process.
+- `-p` index in url will used as regex pattern. All indexes who match string will exported in one file. Parameter is only used in export process.
 
 ### Example
 Export an index data from elasticsearch server to file:
