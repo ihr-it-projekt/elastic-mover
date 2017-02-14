@@ -155,7 +155,7 @@ function preImExport($es_url, $use_pattern)
 
         foreach ($indexes as $index => $value) {
             if (preg_match(sprintf('/%s/', $pattern), $index)) {
-                echo sprintf('Add index: %s to export', $index) . PHP_EOL;
+                echo sprintf('Add index: %s to export. ', $index) . PHP_EOL;
                 $es_urls[] = sprintf('%s%s', $serverUrl, $index);
             }
         }
