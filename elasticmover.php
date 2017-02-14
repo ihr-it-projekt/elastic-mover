@@ -12,7 +12,7 @@ $data_type    = 0;
 $use_pattern  = false;
 
 if ($argc == 1) {
-    echo "ElasticMover 0.1.1\n";
+    echo "ElasticMover 0.1.2\n";
     echo "Usage: php elasticmover.php -i=<input path> -o=<output path> [options...]\n";
     echo "Options: \n";
     echo " -i=<elasticsearch index url or file path>\texample: -i=http://localhost:9200/index or /path/to/file\n";
@@ -108,6 +108,7 @@ if ($argc == 1) {
             try {
                 $inputs = preImExport($input, $use_pattern);
                 foreach ($inputs as $input) {
+                    echo sprintf('Export: %s ', $input) . PHP_EOL;
                     es2file($input, $output, $data_type, $verbose_mode, $chunk_size);
                 }
             } catch (\Exception $e) {
@@ -154,6 +155,7 @@ function preImExport($es_url, $use_pattern)
 
         foreach ($indexes as $index => $value) {
             if (preg_match(sprintf('/%s/', $pattern), $index)) {
+                echo sprintf('Add index: %s to export', $index) . PHP_EOL;
                 $es_urls[] = sprintf('%s%s', $serverUrl, $index);
             }
         }
