@@ -112,7 +112,7 @@ if ($argc == 1) {
                     es2file($input, $output, $data_type, $verbose_mode, $chunk_size);
                 }
             } catch (\Exception $e) {
-                echo  $e->getMessage();
+                echo $e->getMessage();
             }
         } elseif ($input_type == 1 && $output_type == 0) {
             echo "$input ---";
@@ -164,7 +164,7 @@ function preImExport($es_url, $use_pattern)
     }
 
     if (empty($es_urls)) {
-        $message = sprintf('Can not find an index that match pattern "%s"', $pattern);
+        $message = sprintf('Can not find an index that match pattern "%s"', $pattern) . PHP_EOL;
         throw new \Exception($message);
     }
 
@@ -209,8 +209,9 @@ function es2file($es_url, $output, $data_type, $verbose_mode = 1, $chunk_size = 
 
         $scroll_ret = $es->createScrollID($query);
 
-        if(!$scroll_ret || !isset($scroll_ret->_scroll_id, $scroll_ret->hits, $scroll_ret->hits->total)) {
-            echo sprintf('No scroll data found. Maybe index: "%s" in query closed?', $es_url);
+        if (!$scroll_ret || !isset($scroll_ret->_scroll_id, $scroll_ret->hits, $scroll_ret->hits->total)) {
+            echo sprintf('No scroll data found. Maybe index: "%s" in query closed?', $es_url) . PHP_EOL;
+
             return;
         }
 
