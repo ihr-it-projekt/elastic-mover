@@ -210,7 +210,7 @@ function es2file($es_url, $output, $data_type, $verbose_mode = 1, $chunk_size = 
         $scroll_ret = $es->createScrollID($query);
 
         if(!$scroll_ret || !isset($scroll_ret->_scroll_id, $scroll_ret->hits, $scroll_ret->hits->total)) {
-            echo sprintf('No data scroll data found. Maybe index: "%s" in query closed?', $es_url);
+            echo sprintf('No scroll data found. Maybe index: "%s" in query closed?', $es_url);
             return;
         }
 
